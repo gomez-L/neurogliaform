@@ -8,3 +8,7 @@ GABAergic interneurons are key regulators of cortical circuit function. Among th
 functionally and molecularly discrete NGC cortical subtypes.
 
 Programming Languages: R, Python, Bash
+
+Raw data for this project is available in NCBI Gene Expression Omnibus under accession number GSE225639 
+
+Contents here provided are also available at Open Science Framework https://osf.io/se7gu 
