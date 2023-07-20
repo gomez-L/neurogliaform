@@ -1,0 +1,313 @@
+---
+title: 'Code Notebook for : </br>  </br> Developmental Emergence of Neurogliaform Cell Diversity'
+author: "Lucia Gomez Teijeiro"
+date: "2023-07-19"
+output:
+  html_document:
+    df_print: paged
+subtitle: </br>  </br> Dataset Integration and Identity Prediction - Postnatal Day 30 </br>  </br> 
+---
+
+ </br>
+**Information for replication:**  </br>
+This code was executed using Seurat version 2 and R version 3.4.2. 
+Some of the functions here used are no longer supported in current versions.
+
+```{=html}
+<style>
+p {
+    font-size: 15px;
+    line-height: 20px;
+    margin: 0px 0px 12px 0px;
+}
+h1, h2, h3, h4, h5, h6, legend {
+    font-family: Montserrat, sans-serif;
+    font-weight: 700;
+    font-size: 20px;
+    color:#56088a;
+}
+body {
+  font-family: "Montserrat", serif, "Open Sans", sans-serif;
+  max-width:5000px !important;
+}
+
+
+#sidebar .date {
+  color: white;
+  font-size:70%;
+}
+#sidebar h2 {
+    z-index: 200;
+    background-color: #56088a;
+    text-align: center;
+    padding: 0.7em;
+    display: block;
+    color: #fcfcfc;
+    font-size: 100%;
+    margin-top: 0px;
+    margin-bottom: 0.809em;
+}
+#sidebar h2 a {
+  font-family:"Montserrat", serif, "Open Sans", sans-serif;
+  color: white;
+  font-weight:700;
+  font-size:120%;
+  padding: 0.1em;
+  line-height: 25px;
+  margin-top: 20px;
+  margin-bottom: 20px;
+  margin-left:5px;
+  margin-left:5px;
+}
+#nav-top span.glyphicon {
+    color: #56088a;
+    font-size: 28px;
+}
+#content a{
+  color:white;
+  font-size:110%;
+  font-weight:700;
+  margin-top: 30px;
+}
+#postamble {
+  background:#56088a;
+  border-top:solid 3px #56088a;
+  width:100%;
+}
+</style>
+```
+```{css, echo=FALSE}
+.title {
+  text-align: center;
+}
+.subtitle {
+  text-align: center;
+}
+@media screen and (max-width: 5000px){
+#content{
+    max-width:5000px;
+    margin-left: 300;
+    margin-right:0;
+    padding: 1em;
+    padding-top: 1em;
+    padding-right: 8em;
+    padding-bottom: 1em;
+    padding-left: 25em;
+    background:white;
+}}
+#sidebar{ 
+  background: black;
+  width:32%;
+}
+
+```
+
+
+```{r setup, include=TRUE, eval=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# Load required packages
+library(rmdformats) ; library(Seurat) ; library(WGCNA) ; library(SummarizedExperiment) ; library(bmrm) ; library(parallel) ; library(FNN) ; library(readr)
+```
+
+## Load data
+
+Seurat object with Tasic et al., 2018 Htr3a-expressing cortical cells.
+Seurat object with P30 in house dataset containing Htr3a-expressing cortical cells.
+
+```{r load, include=TRUE, eval=FALSE}
+
+Tasic18 <- readRDS("data/Tasic18_Seurat.rds")
+P30 <- readRDS("data/NGC_P30_Seurat.rds")
+
+```
+
+## STEP 1 </br> </br> CCA Tasic18 with P30 and bicor implementation for dimension selection
+
+Use Seurat version 2 Canonical Correlation Analysis Integration pipeline to project in the same embedding space T18 and P30 cells.
+
+```{r CCA, include=TRUE, eval=FALSE}
+
+set.seed(1234)
+
+# normalize, scale and find variable genes
+P30 <- NormalizeData(object = P30) ; P30 <- ScaleData(object = P30) ; P30 <- FindVariableGenes(object = P30, do.plot = FALSE)
+Tasic18 <- NormalizeData(object = Tasic18) ; Tasic18 <- ScaleData(object = Tasic18) ; Tasic18 <- FindVariableGenes(object = Tasic18, do.plot = FALSE)
+
+# find common variable genes across datasets
+hvg.P30<- rownames(x = head(x = P30@hvg.info, n = 2000)) ; hvg.Tasic18 <- rownames(x = head(x = Tasic18@hvg.info, n = 2000))
+hvg.union <- union(x = hvg.P30, y = hvg.Tasic18)
+
+# annotate dataset
+P30@meta.data[, "protocol"] <- "NkxP30" ; Tasic18@meta.data[, "protocol"] <- "Tasic18"
+
+# perform CCA integration
+CCA_merged <- RunCCA(object = P30, object2 = Tasic18, genes.use = hvg.union)
+CCA_merged <- CalcVarExpRatio(object = CCA_merged, reduction.type = "pca", grouping.var = "protocol", dims.use = 1:20)
+CCA_merged <- SubsetData(object = CCA_merged, subset.name = "var.ratio.pca", accept.low = 0.5)
+CCA_merged <- AlignSubspace(object = CCA_merged, reduction.type = "cca", grouping.var = "protocol", dims.align = 1:20)
+
+# find which CCA embeddings are correlated with expression data
+M <- bicor(t(CCA_merged@scale.data),CCA_merged@dr$cca.aligned@cell.embeddings)
+colSums(M>0.15,na.rm=TRUE) ; cca.dims <- which(colSums(M>0.15,na.rm=TRUE)>=30)
+
+# calculate tSNE embedding from CCA coordinates and plot
+CCA_merged <- RunTSNE(object = CCA_merged, reduction.use = "cca.aligned", dims.use = cca.dims, do.fast = TRUE,dim.embed = 2,perplexity=30)
+p1 <- TSNEPlot(object = CCA_merged, group.by = "protocol", do.return = TRUE, pt.size = 1)
+p2 <- TSNEPlot(object = CCA_merged ,group.by="cluster",do.return = TRUE, pt.size = 1,do.label=T,colors.use =rainbow(29))
+plot_grid(p1, p2)
+
+# Add vector of double positive cells and plot
+CCA_merged@meta.data$Tom_cells <- CCA_merged@meta.data$brightfield=="TOM" | CCA_merged@meta.data$wpre>30
+TSNEPlot(object = CCA_merged ,group.by="Tom_cells",do.return = TRUE, pt.size = 1,do.label=F)
+
+# Gene expression plots on integration coordinates 
+FeaturePlot(CCA_merged,reduction.use = "tsne",features.plot = c("Vip","Lamp5"),cols.use = "BuGn")
+
+# Filter CCA_merged to keep and plot only P30 double positive cells and tasic cells by protocol and cluster
+Tand_dp30 <-  SubsetData(CCA_merged,cells.use = CCA_merged@meta.data$Tom_cells==T | CCA_merged@meta.data$protocol %in% c("Tasic18"))
+table(Tand_dp30@meta.data$Tom_cells)
+TSNEPlot(object = Tand_dp30 ,group.by="protocol",do.return = TRUE, pt.size = 1,do.label=T)
+TSNEPlot(object = Tand_dp30 ,group.by="cluster",do.return = TRUE, pt.size = 1,do.label=T,colors.use =rainbow(29))
+
+```
+
+## STEP 2 </br> </br> KNN prediction of the identity of P30 cells based on T18 identity annotation (nearest neighbors classifier on tSNE coordinates)
+
+```{r KNN, include=TRUE, eval=FALSE}
+
+# Split data in T18 and P30 cells
+CCA_merged_P30 <- SubsetData(CCA_merged,cells.use = CCA_merged@meta.data$protocol=="NkxP30")
+CCA_merged_T18 <- SubsetData(CCA_merged,cells.use = CCA_merged@meta.data$protocol=="Tasic18")
+
+# Train and test on tasic cells with 10 folds to evaluate performance and tune hyperparameters
+set.seed(1234)
+
+folds <- balanced.cv.fold(as.factor(CCA_merged_T18@meta.data$cluster),num.cv = 10)
+KNN.index <- simplify2array(mclapply(levels(folds),mc.cores=1,function(f) {
+  x.trn <- GetCellEmbeddings(CCA_merged_T18,"tsne")[folds!=f,]
+  x.tst <- GetCellEmbeddings(CCA_merged_T18,"tsne")
+  y.trn <- as.factor(CCA_merged_T18@meta.data$cluster)[folds!=f]
+  knn <- FNN::get.knnx(x.trn,x.tst,k=75)
+  y.tst <- array(y.trn[knn$nn.index],dim(knn$nn.index))
+  y.tst <- table(row(y.tst),factor(y.tst,levels(y.trn)))
+  #y.tst <- y.tst/as.vector(table(y.trn)[col(y.tst)])
+  P <- max.col(y.tst)
+  P[folds!=f] <- NA
+  P
+}))
+KNN.index <- rowSums(KNN.index,na.rm=TRUE)
+CCA_merged_T18@meta.data$knn.pred <- levels(factor(CCA_merged_T18@meta.data$cluster))[KNN.index]
+
+with(CCA_merged_T18@meta.data,table(knn.pred,cluster))
+with(CCA_merged_T18@meta.data,mean(knn.pred==cluster)) # performance score
+
+# Knn trained on tasic and tested on P30 to predict P30 identity
+set.seed(123)
+CCA_merged_P30@meta.data$knn.pred <- local({
+  x.trn <- GetCellEmbeddings(CCA_merged_T18,"tsne")
+  x.tst <- GetCellEmbeddings(CCA_merged_P30,"tsne")
+  y.trn <- as.factor(CCA_merged_T18@meta.data$cluster)
+  knn <- FNN::get.knnx(x.trn,x.tst,k=75)
+  y.tst <- array(y.trn[knn$nn.index],dim(knn$nn.index))
+  y.tst <- table(row(y.tst),factor(y.tst,levels(y.trn)))
+  #y.tst <- y.tst/as.vector(table(y.trn)[col(y.tst)])
+  levels(y.trn)[max.col(y.tst)]
+})
+with(CCA_merged_P30@meta.data,table(knn.pred,Tom_cells))
+
+# KNN prediction - plot results
+dp_P30 <- SubsetData(CCA_merged_P30, cells.use= CCA_merged_P30@meta.data$Tom_cells=="TRUE" & CCA_merged_P30@meta.data$protocol=="NkxP30")
+xy <- expand.grid(x = seq(-40,40,length.out=100), y = seq(-45,45,length.out=100))
+nn <- FNN::get.knnx(GetCellEmbeddings(CCA_merged_T18,"tsne"),data.matrix(xy),k=75)$nn.index
+nn.Y <- array(CCA_merged_T18@meta.data$cluster[nn],dim(nn))
+Y <- table(row(nn.Y),nn.Y)
+xy$Y <- colnames(Y)[max.col(Y)]
+with(dp_P30@meta.data,table(knn.pred,Tom_cells))
+centroid_x<-tapply(GetCellEmbeddings(CCA_merged_T18,"tsne")[,"tSNE_1"],as.factor(CCA_merged_T18@meta.data$cluster),mean)
+centroid_y<-tapply(GetCellEmbeddings(CCA_merged_T18,"tsne")[,"tSNE_2"],as.factor(CCA_merged_T18@meta.data$cluster),mean)
+data_centroid=data.frame(centroid_x=centroid_x,centroid_y=centroid_y,labels=levels(as.factor(CCA_merged_T18@meta.data$cluster)))
+
+ggplot(xy) + geom_tile(aes(fill=Y,x=x,y=y)) + 
+  geom_point(aes(x=tSNE_1,y=tSNE_2,colour=as.factor(CCA_merged_P30@meta.data$Tom_cells)),data=as.data.frame(GetCellEmbeddings(dp_P30,"tsne")))+
+  scale_color_manual(values= c("green","yellow"))+
+  scale_fill_manual(values= gray.colors(29))+
+  geom_text(data=data_centroid,aes(x=centroid_x,y=centroid_y,label=labels))
+
+```
+
+## STEP 3 </br> </br> SVM prediction of the identity of P30 cells based on T18 identity annotation (support vector machines classifier on gene expression)
+
+```{r SVM, include=TRUE, eval=FALSE}
+
+set.seed(1234)
+
+# Load bag functions' library
+source("lib/SVM_bagging.R")
+
+# prepare training data (tasic) - summarized experiment with common genes
+T18_se <- SummarizedExperiment(assays = list(exon=CCA_merged_T18@raw.data[,match(rownames(CCA_merged_T18@meta.data),colnames(CCA_merged_T18@raw.data))]),colData=CCA_merged_T18@meta.data)
+T18_se$subclass <- factor(T18_se$subclass) ; T18_se$cluster <- factor(T18_se$cluster)
+T18_se <- T18_se[intersect(hvg.union,rownames(T18_se)),]
+
+# train SVM on Tasic data 
+bag <- T18.train.bag(T18_se,nCell=50,nGene=250,nBag=25,mc.cores=4,level=3,LAMBDA=1800,MAX_ITER=4000)
+
+# Predict P30 cells from tasic bag
+f <- T18.bag.predict(bag,t(CCA_merged_P30@scale.data))
+R <- apply(-f,2:3,rank)
+R <- apply(R,1:2,mean)
+minbag <- colnames(R)[apply(R,1,which.min)]
+
+
+# SVM prediction - plot results
+# Heatmap with predictions
+hc <- hclust(dist(t(R)))
+# BAG HEATMAP ORDERED BY NGC DECISION VALUE - useful to assess bag and knn agreement
+R2 <- as.data.frame(R)
+bag.pred <- R2[order(R2$`Lamp5 Plch2 Dock5`,R2$`Lamp5 Lsp1`),]
+CCA_merged_P30@meta.data$bag.pred <- colnames(bag.pred)[apply(bag.pred,1,which.min)]
+heatmap <- heatmap3::heatmap3(
+  bag.pred,scale="none",labRow=NA,
+  Rowv=NA,Colv=as.dendrogram(hc),
+  RowSideColors = cbind(bagNGC=ifelse(CCA_merged_P30@meta.data$bag.pred %in% c("Lamp5 Plch2 Dock5","Lamp5 Lsp1"),"black","white"),
+                        knnNGC=ifelse(CCA_merged_P30@meta.data$knn.pred$knn.pred=="Lamp5 Plch2 Dock5","black","white"),
+                        Tom=ifelse(CCA_merged_P30@meta.data$Tom_cells,"red","white"))
+)
+
+```
+
+## STEP 4 </br> </br> Cross-Compare KNN and SVM results to annotate P30 cells consensus identity
+
+```{r consensus, include=TRUE, eval=FALSE}
+
+minbag <- colnames(R)[apply(R,1,which.min)]
+knnvsbag <- data.frame(minbag,knn=CCA_merged_P30@meta.data$knn.pred)
+knnvsbag$equalpred <- ifelse(as.character(knnvsbag$minbag)==as.character(knnvsbag$knn),TRUE,FALSE)
+knnvsbag$cell_names <- CCA_merged_P30@cell.names
+table(knnvsbag$equalpred,CCA_merged_P30@meta.data$Tom_cells)
+
+CCA_merged_P30@meta.data$IDconsensus <- ifelse(knnvsbag$equalpred==TRUE,CCA_merged_P30@meta.data$knn.pred,"inconclusive")
+
+```
+
+## STEP 5 </br> </br> Assemble results and save output
+
+```{r out, include=TRUE, eval=FALSE}
+
+CCA_KNN_SVM_T18_P30 <- rbind(
+  
+  data.frame(cellnames=CCA_merged_T18@cell.names,dataset="T18",tSNE_1=GetCellEmbeddings(CCA_merged_T18,"tsne")[,"tSNE_1"],
+             
+             tSNE_2=GetCellEmbeddings(CCA_merged_T18,"tsne")[,"tSNE_2"],KNNpred="non appliable",SVMpred="non appliable",
+             IDconsensus=CCA_merged_T18@meta.data$cluster,Tom_cells="non appliable"),
+  
+  data.frame(cellnames=CCA_merged_P30@cell.names,dataset="P30",
+             tSNE_1=GetCellEmbeddings(CCA_merged_P30,"tsne")[,"tSNE_1"],
+             tSNE_2=GetCellEmbeddings(CCA_merged_P30,"tsne")[,"tSNE_2"],
+             KNNpred=CCA_merged_P30@meta.data$knn.pred,SVMpred=CCA_merged_P30@meta.data$bag.pred,
+             IDconsensus=CCA_merged_P30@meta.data$IDconsensus,Tom_cells=CCA_merged_P30@meta.data$Tom_cells)
+  
+)
+
+#write.csv(CCA_KNN_SVM_T18_P30,"out/CCA_KNN_SVM_T18_P30.csv",row.names=FALSE)  
+```
