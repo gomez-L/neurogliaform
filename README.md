@@ -1,6 +1,6 @@
 # Code for replicating reported findings on: "Developmental Emergence of Neurogliaform cell Diversity"
 
-## Due to GitHub file storage limitations, source data for replicating this work is only accessible at https://osf.io/se7gu, NCBI GEO GSE225639 or as supplementary material for the research paper:
+### Due to GitHub file storage limitations, source data for replicating this work is only accessible at https://osf.io/se7gu, NCBI GEO GSE225639 or as supplementary material for the research paper:
 
 Lucia Gomez, Christelle Cadilhac, Julien Prados, Nand Mule, Denis Jabaudon, Alexandre Dayer; Developmental emergence of cortical neurogliaform cell diversity. Development 2023; dev.201830. doi: https://doi.org/10.1242/dev.201830
 
