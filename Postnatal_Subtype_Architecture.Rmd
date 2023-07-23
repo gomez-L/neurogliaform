@@ -1,0 +1,169 @@
+---
+title: 'Code Notebook for : </br>  </br> Developmental Emergence of Neurogliaform Cell Diversity'
+author: "Lucia Gomez Teijeiro"
+date: "2023-07-19"
+output:
+  html_document:
+    df_print: paged
+subtitle: </br>  </br> Postnatal Molecular Architecture - NGC Subtypes (Dock5 vs Lsp1) </br>  </br> 
+---
+
+ </br>
+**Information for replication:**  </br>
+This code was executed using Seurat version 2 and R version 3.4.2. 
+Some of the functions here used are no longer supported in current versions.
+
+```{=html}
+<style>
+p {
+    font-size: 15px;
+    line-height: 20px;
+    margin: 0px 0px 12px 0px;
+}
+h1, h2, h3, h4, h5, h6, legend {
+    font-family: Montserrat, sans-serif;
+    font-weight: 700;
+    font-size: 20px;
+    color:#56088a;
+}
+body {
+  font-family: "Montserrat", serif, "Open Sans", sans-serif;
+  max-width:5000px !important;
+}
+
+
+#sidebar .date {
+  color: white;
+  font-size:70%;
+}
+#sidebar h2 {
+    z-index: 200;
+    background-color: #56088a;
+    text-align: center;
+    padding: 0.7em;
+    display: block;
+    color: #fcfcfc;
+    font-size: 100%;
+    margin-top: 0px;
+    margin-bottom: 0.809em;
+}
+#sidebar h2 a {
+  font-family:"Montserrat", serif, "Open Sans", sans-serif;
+  color: white;
+  font-weight:700;
+  font-size:120%;
+  padding: 0.1em;
+  line-height: 25px;
+  margin-top: 20px;
+  margin-bottom: 20px;
+  margin-left:5px;
+  margin-left:5px;
+}
+#nav-top span.glyphicon {
+    color: #56088a;
+    font-size: 28px;
+}
+#content a{
+  color:white;
+  font-size:110%;
+  font-weight:700;
+  margin-top: 30px;
+}
+#postamble {
+  background:#56088a;
+  border-top:solid 3px #56088a;
+  width:100%;
+}
+</style>
+```
+```{css, echo=FALSE}
+.title {
+  text-align: center;
+}
+.subtitle {
+  text-align: center;
+}
+@media screen and (max-width: 5000px){
+#content{
+    max-width:5000px;
+    margin-left: 300;
+    margin-right:0;
+    padding: 1em;
+    padding-top: 1em;
+    padding-right: 8em;
+    padding-bottom: 1em;
+    padding-left: 25em;
+    background:white;
+}}
+#sidebar{ 
+  background: black;
+  width:32%;
+}
+
+```
+
+
+```{r setup, include=TRUE, eval=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# Load required packages
+library(rmdformats) ; library(Seurat) ; library(bmrm) ; library(parallel) ; library(readr) ; library(abind)
+```
+
+
+## Load data and subset to keep just NGC cells
+
+```{r load, include=TRUE, eval=FALSE}
+
+P15P30P56_f <- readRDS("out/P15P30P56_f.rds")
+P15P30P56_f_DL <- SubsetData(P15P30P56_f,cells.use = P15P30P56_f@meta.data$identity %in% c("Lamp5 Plch2 Dock5","Lamp5 Lsp1"))
+
+```
+
+
+## Binary classification by cell SUBTYPE to find genes characterizing types (NGC vs nonNGC)
+
+```{r classif, include=TRUE, eval=FALSE}
+
+# Scale data regressing out expression effects due age variations (we want to discover the genes with stable expression over time for each cell type)
+P15P30P56_f_DL <- ScaleData(P15P30P56_f_DL,vars.to.regress = c("nGene","nUMI","protocol"))
+# define boolean vector for type (target of the binary classification)
+Dock5vsLsp1 <-  ifelse(P15P30P56_f_DL@meta.data$identity=="Lamp5 Plch2 Dock5",TRUE,FALSE)
+
+# load machine learning library - containing code for the hingeloss SVM classifier
+source("src/lib/ML_lib.R")
+# run classification
+X <- t(as.matrix(P15P30P56_f_DL@scale.data)) 
+folds <- balanced.cv.fold(Dock5vsLsp1,num.cv=10) ; table(folds,Dock5vsLsp1)
+Dock5vsLsp1_hinge <- mclapply(levels(folds),mc.cores=1,function(f) {
+  Y <- feature.selected.hinge(x.trn=X[folds!=f,],y.trn=Dock5vsLsp1[folds!=f],x.tst=X,LAMBDA=2,LAMBDA2=2,n=1000,MAX_ITER=1000)
+  D <- attr(Y,"decision.value")
+  D[folds!=f] <- NA
+  R <- attr(Y,"rank")
+  rownames(R) <- colnames(X)
+  return(list("decision"=D,"rank"=R))
+})
+
+# Split list to create a matrix with decisions (each CV is one column) and a list with ranks (each CV is a list element)
+Dock5vsLsp1C_hinge_decisionmatrix <- sapply(Dock5vsLsp1_hinge,"[[",1)
+Dock5vsLsp1_ranklist <- lapply(Dock5vsLsp1_hinge,"[[",2)
+# Calculate global decision value
+Dock5vsLsp1_hinge_globaldecision <- rowSums(Dock5vsLsp1C_hinge_decisionmatrix,na.rm = T)
+
+# Calculate global rank per gene - robust genes for each type because they are commonly predicted in the 5 CVs
+# First I transform rank list into a 3D array so each rank matrix (one per CV) is in a different 3d level of the array
+Dock5vsLsp1_hinge_rankarray <- abind(Dock5vsLsp1_ranklist,along=3)
+# I want to calculate the mean value for all columns in rank dataframe - p value
+# Calculate significancy of our model to a random model using the same number of cells, for cell vectors with NGCvsNonNGC_ranklist logical value 
+Dock5vsLsp1_robustrank_commontoCVs <- rowSums(Dock5vsLsp1_hinge_rankarray,dims = 2) 
+Dock5vsLsp1_robustrank_commontoCVs_df <- as.data.frame(Dock5vsLsp1_robustrank_commontoCVs)
+Dock5vsLsp1_robustrank_commontoCVs_df_div10 <- Dock5vsLsp1_robustrank_commontoCVs_df/10
+
+# save full rank object (only 150 top and 150 bottom rows must be used for DEG functional enrichment analysis - GO, HGNC)
+#write.csv(Dock5vsLsp1_robustrank_commontoCVs_df_div10,file="out/Dock5vsLsp1_acrossdev_fullrank.csv")
+
+```
+
+
+## For calculating GO and HGNC enrichment analysis use the lib "lib/go_hgnc.R" 
+
+
