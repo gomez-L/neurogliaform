@@ -1,0 +1,253 @@
+---
+title: 'Code Notebook for : </br>  </br> Developmental Emergence of Neurogliaform Cell Diversity'
+author: "Lucia Gomez Teijeiro"
+date: "2023-07-19"
+output:
+  html_document:
+    df_print: paged
+subtitle: </br>  </br> Postnatal Molecular Architecture - NGC Type </br>  </br> 
+---
+
+ </br>
+**Information for replication:**  </br>
+This code was executed using Seurat version 2 and R version 3.4.2. 
+Some of the functions here used are no longer supported in current versions.
+
+```{=html}
+<style>
+p {
+    font-size: 15px;
+    line-height: 20px;
+    margin: 0px 0px 12px 0px;
+}
+h1, h2, h3, h4, h5, h6, legend {
+    font-family: Montserrat, sans-serif;
+    font-weight: 700;
+    font-size: 20px;
+    color:#56088a;
+}
+body {
+  font-family: "Montserrat", serif, "Open Sans", sans-serif;
+  max-width:5000px !important;
+}
+
+
+#sidebar .date {
+  color: white;
+  font-size:70%;
+}
+#sidebar h2 {
+    z-index: 200;
+    background-color: #56088a;
+    text-align: center;
+    padding: 0.7em;
+    display: block;
+    color: #fcfcfc;
+    font-size: 100%;
+    margin-top: 0px;
+    margin-bottom: 0.809em;
+}
+#sidebar h2 a {
+  font-family:"Montserrat", serif, "Open Sans", sans-serif;
+  color: white;
+  font-weight:700;
+  font-size:120%;
+  padding: 0.1em;
+  line-height: 25px;
+  margin-top: 20px;
+  margin-bottom: 20px;
+  margin-left:5px;
+  margin-left:5px;
+}
+#nav-top span.glyphicon {
+    color: #56088a;
+    font-size: 28px;
+}
+#content a{
+  color:white;
+  font-size:110%;
+  font-weight:700;
+  margin-top: 30px;
+}
+#postamble {
+  background:#56088a;
+  border-top:solid 3px #56088a;
+  width:100%;
+}
+</style>
+```
+```{css, echo=FALSE}
+.title {
+  text-align: center;
+}
+.subtitle {
+  text-align: center;
+}
+@media screen and (max-width: 5000px){
+#content{
+    max-width:5000px;
+    margin-left: 300;
+    margin-right:0;
+    padding: 1em;
+    padding-top: 1em;
+    padding-right: 8em;
+    padding-bottom: 1em;
+    padding-left: 25em;
+    background:white;
+}}
+#sidebar{ 
+  background: black;
+  width:32%;
+}
+
+```
+
+
+```{r setup, include=TRUE, eval=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# Load required packages
+library(rmdformats) ; library(Seurat) ; library(bmrm) ; library(parallel) ; library(readr) ; library(abind)
+```
+
+
+## Load data
+
+```{r load, include=TRUE, eval=FALSE}
+
+Tasic18 <- readRDS("data/Tasic18_Seurat.rds")
+P15 <- readRDS("data/NGC_P15_Seurat.rds")
+P30 <- readRDS("data/NGC_P30_Seurat.rds")
+ID_P15 <- read.csv("out/CCA_KNN_SVM_T18_P15.csv")
+ID_P30 <- read.csv("out/CCA_KNN_SVM_T18_P30.csv")
+
+```
+
+
+## Subset & Merge data to keep a random sample balanced per cell type (NGC vs nonNGC) (apply QC on fluorescence)
+
+
+```{r sample, include=TRUE, eval=FALSE}
+
+# Annotate datasets by cell subtype
+P15@meta.data$identity <- ID_P15$IDconsensus[match(colnames(P15),ID_P15$cellnames)]
+P30@meta.data$identity <- ID_P30$IDconsensus[match(colnames(P30),ID_P30$cellnames)]
+Tasic18@meta.data$identity <- Tasic18@meta.data$cluster
+
+# Keep only GFP+TOM+ in Dock5vsLsp1 subtypes and GFP+TOM- in the rest of the clusters
+  # remove TOM- cells from NGC clusters
+P15_1 <- SubsetData(P15, cells.use = (P30@meta.data$Tom_cells %in% FALSE & P30@meta.data$identity %in% c("Lamp5 Lsp1","Lamp5 Plch2 Dock5")))
+P30_1 <- SubsetData(P30, cells.use = (P30@meta.data$Tom_cells %in% FALSE & P30@meta.data$identity %in% c("Lamp5 Lsp1","Lamp5 Plch2 Dock5")))
+  # remove TOM+ cells from nonNGCclusters
+P15_2 <- SubsetData(P15, cells.use = (P15@meta.data$Tom_cells %in% TRUE & !(P15@meta.data$identity %in% c("Lamp5 Lsp1","Lamp5 Plch2 Dock5"))))
+P30_2 <- SubsetData(P30, cells.use = (P30@meta.data$Tom_cells %in% TRUE & !(P30@meta.data$identity %in% c("Lamp5 Lsp1","Lamp5 Plch2 Dock5"))))
+  # ReMerge datasets
+P15 <- MergeSeurat(P15_1,P15_2) ; P30 <- MergeSeurat(P30_1,P30_2)
+
+# Calculate how many cells per subtype must be used from Tasic dataset in order to balance classes (subtypes)
+  # number of cells to select per subtype will be determined by the mean cell per subtype between P15 and P30 datasets
+    # subtypes with less than 5 cells will be discarded
+P15P30P56 <- MergeSeurat(P15,P30,min.cells = 5) ; P15P30P56 <- MergeSeurat(P15P30P56,Tasic18,min.cells = 5)
+set.seed(123)
+n <- round(rowMeans(table(P15P30P56@meta.data$identity,P15P30P56@meta.data$protocol)[,c("NkxP15","NkxP30")]),digits = 0)
+n <- pmax(n,1)
+cells.to.keep <- unlist(mapply(function(lev,num){sample(Tasic18@cell.names[Tasic18@meta.data$identity %in% lev],num)},names(n),n))
+P15P30P56_f <- SubsetData(P15P30P56,cells.use = (P15P30P56@cell.names %in% cells.to.keep) | (P15P30P56@meta.data$protocol %in% c("NkxP15","NkxP30")))
+
+# Create a factor with ngc (dock5+lsp1) and nonNGC (other subtypes)
+P15P30P56_f@meta.data$NGC <- as.factor(P15P30P56_f@meta.data$identity)
+
+```
+
+
+## Reconstruct maturation order for cells (ordinal machine learning model)
+
+
+```{r ordi, include=TRUE, eval=FALSE}
+
+x <- as.matrix(t(P15P30P56_f@scale.data))
+x <- scale(x,center=TRUE,scale=FALSE)
+
+P15P30P56_f@meta.data$age.ordi <- as.factor(P15P30P56_f@meta.data$protocol)
+levels(P15P30P56_f@meta.data$age.ordi) <- c("1","2","3")
+P15P30P56_f@meta.data$age.ordi <- as.integer(as.character(P15P30P56_f@meta.data$age.ordi))
+table(P15P30P56_f@meta.data$age.ordi,P15P30P56_f@meta.data$protocol)
+
+set.seed(1234)
+folds <- balanced.cv.fold(P15P30P56_f@meta.data$age.ordi,num.cv=10)
+y <- P15P30P56_f@meta.data$age.ordi
+ordipred.cv.cells <- simplify2array(mclapply(levels(folds),mc.cores=1,function(f) {
+  w <- nrbm(ordinalRegressionLoss(x[folds!=f,],P15P30P56_f@meta.data$age.ordi[folds!=f]),LAMBDA = 105,EPSILON_TOL = 1e-7,MAX_ITER = 100)
+  Y <- predict(w,x)
+  Y[folds!=f] <- NA
+  Y
+}))
+P15P30P56_f@meta.data$ordi.cellscore.age.cv <- rowSums(ordipred.cv.cells,na.rm=TRUE)
+P15P30P56_f@meta.data$ordi.cellscore.age.cv <- -(P15P30P56_f@meta.data$ordi.cellscore.age.cv)
+
+# Waves plot (expression of a gene through maturation)
+df <- as.data.frame(as.matrix(t(P15P30P56_f@data)))
+df$type <- as.factor(P15P30P56_f@meta.data$NGC)
+df$cellscoreage.cv <- as.numeric(P15P30P56_f@meta.data$ordi.cellscore.age.cv)
+ggplot(df)+ scale_color_manual(values=c("green", "yellow")) + scale_fill_manual(values=c("green", "yellow")) +
+  geom_point(aes(df$cellscoreage.cv,df$Tox2,fill=as.factor(df$type)),shape=21,colour="black",alpha=1,size=2.5) + 
+  geom_smooth(aes(df$cellscoreage.cv,df$Tox2,color=df$type),method="loess", span=1.5)
+
+# Save object with 3 posnatal ages, cell selection ordipred and ngc vector
+#saveRDS(P15P30P56_f,file="P15P30P56_f.rds")
+
+```
+
+
+## Binary classification by cell TYPE to find genes characterizing types (NGC vs nonNGC)
+
+```{r classif, include=TRUE, eval=FALSE}
+
+# Scale data regressing out expression effects due age variations (we want to discover the genes with stable expression over time for each cell type)
+P15P30P56_f <- ScaleData(P15P30P56_f,vars.to.regress = c("nGene","nUMI","protocol"))
+# define boolean vector for type (target of the binary classification)
+NGCvsNonNGC <-  ifelse(P15P30P56_f@meta.data$NGC=="NGC",TRUE,FALSE)
+
+# load machine learning library - containing code for the hingeloss SVM classifier
+source("src/lib/ML_lib.R")
+# run classification
+X <- t(as.matrix(P15P30P56_f@scale.data)) 
+folds <- balanced.cv.fold(NGCvsNonNGC,num.cv=10) ; table(folds,NGCvsNonNGC)
+NGCvsNonNGC_hinge <- mclapply(levels(folds),mc.cores=1,function(f) {
+  Y <- feature.selected.hinge(x.trn=X[folds!=f,],y.trn=NGCvsNonNGC[folds!=f],x.tst=X,LAMBDA=2,LAMBDA2=2,n=1000,MAX_ITER=1000)
+  D <- attr(Y,"decision.value")
+  D[folds!=f] <- NA
+  R <- attr(Y,"rank")
+  rownames(R) <- colnames(X)
+  return(list("decision"=D,"rank"=R))
+})
+
+# Split list to create a matrix with decisions (each CV is one column) and a list with ranks (each CV is a list element)
+NGCvsNonNGC_hinge_decisionmatrix <- sapply(NGCvsNonNGC_hinge,"[[",1)
+NGCvsNonNGC_ranklist <- lapply(NGCvsNonNGC_hinge,"[[",2)
+# Calculate global decision value
+NGCvsNonNGC_hinge_globaldecision <- rowSums(NGCvsNonNGC_hinge_decisionmatrix,na.rm = T)
+
+# Calculate global rank per gene - robust genes for each type because they are commonly predicted in the 5 CVs
+# First I transform rank list into a 3D array so each rank matrix (one per CV) is in a different 3d level of the array
+NGCvsNonNGC_hinge_rankarray <- abind(NGCvsNonNGC_ranklist,along=3)
+# I want to calculate the mean value for all columns in rank dataframe - p value
+# Calculate significancy of our model to a random model using the same number of cells, for cell vectors with NGCvsNonNGC_ranklist logical value 
+NGCvsNonNGC_robustrank_commontoCVs <- rowSums(NGCvsNonNGC_hinge_rankarray,dims = 2) 
+NGCvsNonNGC_robustrank_commontoCVs_df <- as.data.frame(NGCvsNonNGC_robustrank_commontoCVs)
+NGCvsNonNGC_robustrank_commontoCVs_df_div10 <- NGCvsNonNGC_robustrank_commontoCVs_df/10
+
+# save full rank object (only 150 top and 150 bottom rows must be used for DEG functional enrichment analysis - GO, HGNC)
+#write.csv(NGCvsNonNGC_robustrank_commontoCVs_df_div10,file="out/NGCvsnonNGC_acrossdev_fullrank.csv")
+
+# save universe of genes expressed in P15P30P56_f object (universe for DEG functional analysis)
+#write(rownames(P15P30P56_f@data),file="universe.txt")
+
+```
+
+
+## For calculating GO and HGNC enrichment analysis use the lib "lib/go_hgnc.R" 
+
+
+
+
+
