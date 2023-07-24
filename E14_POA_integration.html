@@ -1741,8 +1741,9 @@ E14_POA_integration &lt;- local({
     E14full.list[[i]] &lt;- NormalizeData(E14full.list[[i]], verbose = FALSE)
     E14full.list[[i]] &lt;- FindVariableFeatures(E14full.list[[i]], selection.method = &quot;vst&quot;,nfeatures = 2000, verbose = FALSE)
   }
-  # find anchors between datasets using variable genes
-  anchors &lt;- FindIntegrationAnchors(object.list = E14full.list, normalization.method = &quot;LogNormalize&quot;,anchor.features = 2000)
+  # find anchors between datasets using 10X POA as reference and  variable genes
+  reference_dataset &lt;- which(names(E14full.list) == &quot;POA&quot;)
+  anchors &lt;- FindIntegrationAnchors(object.list = E14full.list, reference=reference_dataset, normalization.method = &quot;LogNormalize&quot;,anchor.features = 2000)
   # integrate data based on anchors
   E14_POA_integration &lt;- IntegrateData(anchorset = anchors, normalization.method = &quot;LogNormalize&quot;,dims=1:20,k.weight = 20)
   E14_POA_integration
