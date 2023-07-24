@@ -1,0 +1,189 @@
+---
+title: 'Code Notebook for : </br>  </br> Developmental Emergence of Neurogliaform
+  Cell Diversity'
+author: "Lucia Gomez Teijeiro"
+date: "2023-07-19"
+output:
+  html_document:
+    df_print: paged
+subtitle: "</br>  </br> Embryonic POA dataset Integration </br>  </br>"
+---
+
+ </br>
+**Information for replication:**  </br>
+This code was executed using Seurat version 3 and R version 3.6.1. 
+
+```{=html}
+<style>
+p {
+    font-size: 15px;
+    line-height: 20px;
+    margin: 0px 0px 12px 0px;
+}
+h1, h2, h3, h4, h5, h6, legend {
+    font-family: Montserrat, sans-serif;
+    font-weight: 700;
+    font-size: 20px;
+    color:#56088a;
+}
+body {
+  font-family: "Montserrat", serif, "Open Sans", sans-serif;
+  max-width:5000px !important;
+}
+
+
+#sidebar .date {
+  color: white;
+  font-size:70%;
+}
+#sidebar h2 {
+    z-index: 200;
+    background-color: #56088a;
+    text-align: center;
+    padding: 0.7em;
+    display: block;
+    color: #fcfcfc;
+    font-size: 100%;
+    margin-top: 0px;
+    margin-bottom: 0.809em;
+}
+#sidebar h2 a {
+  font-family:"Montserrat", serif, "Open Sans", sans-serif;
+  color: white;
+  font-weight:700;
+  font-size:120%;
+  padding: 0.1em;
+  line-height: 25px;
+  margin-top: 20px;
+  margin-bottom: 20px;
+  margin-left:5px;
+  margin-left:5px;
+}
+#nav-top span.glyphicon {
+    color: #56088a;
+    font-size: 28px;
+}
+#content a{
+  color:white;
+  font-size:110%;
+  font-weight:700;
+  margin-top: 30px;
+}
+#postamble {
+  background:#56088a;
+  border-top:solid 3px #56088a;
+  width:100%;
+}
+</style>
+```
+```{css, echo=FALSE}
+.title {
+  text-align: center;
+}
+.subtitle {
+  text-align: center;
+}
+@media screen and (max-width: 5000px){
+#content{
+    max-width:5000px;
+    margin-left: 300;
+    margin-right:0;
+    padding: 1em;
+    padding-top: 1em;
+    padding-right: 8em;
+    padding-bottom: 1em;
+    padding-left: 25em;
+    background:white;
+}}
+#sidebar{ 
+  background: black;
+  width:32%;
+}
+
+```
+
+
+```{r setup, include=TRUE, eval=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+# Load required packages
+library(reshape2) ; library(SpatialTools) ; library(forcats) ; library(FNN) ; library(gridExtra) ; library(abind)
+library(dplyr) ; library(bmrm) ; library(ggplot2) ; library(Seurat)
+
+```
+
+
+## Load embryonic data and keep only POA cells
+
+
+```{r load, include=TRUE, eval=FALSE}
+
+# load embryonic data after pseudotime calculation and keep only POA cells
+E14POA <- local({
+  E14_pseudotime <- readRDS("out/E14_pseudotime.rds")
+  E14POA <- subset(E14_pseudotime,experiment %in% c("POA","ccht10_E14_progenitor","ccht9_E14_precursor"))
+  E14POA
+})
+
+```
+
+
+## Perform Seurat v3 Integration for POA datasets (DP, FT & 10X)
+
+
+```{r integrate, include=TRUE, eval=FALSE}
+
+E14POA@assays$RNA@var.features <- vector(mode="logical",length=0)
+
+E14_POA_integration <- local({
+  # split E14POA by experiment (DP, FT, 10X) 
+  E14full.list <- SplitObject(E14POA, split.by = "experiment")
+  # normalize data and find variable genes
+  for (i in 1:length(E14full.list)) {
+    E14full.list[[i]] <- NormalizeData(E14full.list[[i]], verbose = FALSE)
+    E14full.list[[i]] <- FindVariableFeatures(E14full.list[[i]], selection.method = "vst",nfeatures = 2000, verbose = FALSE)
+  }
+  # find anchors between datasets using variable genes
+  anchors <- FindIntegrationAnchors(object.list = E14full.list, normalization.method = "LogNormalize",anchor.features = 2000)
+  # integrate data based on anchors
+  E14_POA_integration <- IntegrateData(anchorset = anchors, normalization.method = "LogNormalize",dims=1:20,k.weight = 20)
+  E14_POA_integration
+})
+# scale integrated data and calculate UMAP projection
+DefaultAssay(E14_POA_integration) <- "integrated"
+E14_POA_integration <- ScaleData(E14_POA_integration)
+E14_POA_integration <- RunPCA(object = E14_POA_integration, verbose = TRUE,assay = "integrated",slot="scale.data")
+E14_POA_integration <- RunUMAP(object = E14_POA_integration, dims = 1:30,n.components = 2L,assay = "integrated",local.connectivity = 100,n.neighbors = 70,min.dist = 0.001)
+
+```
+
+
+## Find Clusters on UMAP Integration projection
+
+
+```{r clustering, include=TRUE, eval=FALSE}
+
+# Find neighbors and calculate clusters
+E14_POA_integration <- FindNeighbors(E14_POA_integration,reduction = "umap",dims = 1:2,k.param = 50)
+E14_POA_integration <- FindClusters(E14_POA_integration,resolution = 0.15)
+
+# order clusters so they follow maturation progression
+E14_POA_integration$clusts_ordered <- factor(E14_POA_integration@active.ident,levels = c("2", "1", "5","6","4","0","3","7"))
+
+```
+
+
+## Save results (integration object)
+
+
+```{r save, include=TRUE, eval=FALSE}
+
+# saveRDS(E14_POA_integration,"out/E14_POA_integration.rds")
+
+```
+
+
+
+
+
+
