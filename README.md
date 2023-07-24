@@ -15,3 +15,16 @@ Programming Languages: R, Python, Bash
 Raw data for this project is available in NCBI Gene Expression Omnibus under accession number GSE225639 
 
 Contents here provided are also available at Open Science Framework https://osf.io/se7gu 
+
+# Guidelines for replication
+
+1 - Download all contents preferably from OSF repository, here only files under 25MB (https://osf.io/se7gu )
+2 - Use R to execute .Rmd or .R files (scripts):
+    Order of scripts:
+      CCA_KNN_SVM_T18_P15.Rmd
+      CCA_KNN_SVM_T18_P30.Rmd
+      Postnatal_Type_Architecture.Rmd
+      Postnatal_Subtype_Architecture.Rmd
+      lib/go_hgnc.R
+      Embryonic_pseudotime.Rmd
+      
