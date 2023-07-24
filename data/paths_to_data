@@ -1,9 +1,21 @@
 
 # raw data after first QC 
+
+# POSTNATAL scRNA-seq
     # For cell type annotated data with fluorescence QC, get P15P30P56_f.rds object (see below)
 Tasic18_Seurat.rds - https://osf.io/se7gu/files/osfstorage/64b79586465d1402cda31de0
 NGC_P15_Seurat.rds - https://osf.io/se7gu/files/osfstorage/64b7fe28903ac102ffdcc555
 NGC_P30_Seurat.rds - https://osf.io/se7gu/files/osfstorage/64b7fe27903ac102f6dccb44
 
-# postnatal data (annotated by subtype and after fluorescence QC)
+# EMBRYONIC scRNA-seq
+POA_DP_E14.rds - https://osf.io/se7gu/files/osfstorage/64be4229bfc49b07b3312a3f
+POA_FT_E14.rds - https://osf.io/se7gu/files/osfstorage/64be4229f2969107b6f06d93
+POACGE_10X_E14.rds - https://osf.io/se7gu/files/osfstorage/64be422dbfc49b07b3312a41
+
+
+# out data
+
+# postnatal out data (annotated by subtype and after fluorescence QC)
 P15P30P56_f.rds - https://osf.io/se7gu/files/osfstorage/64bd4d68903ac106fddccc61
+
+
