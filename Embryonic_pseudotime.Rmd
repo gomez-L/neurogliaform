@@ -1,0 +1,245 @@
+---
+title: 'Code Notebook for : </br>  </br> Developmental Emergence of Neurogliaform
+  Cell Diversity'
+author: "Lucia Gomez Teijeiro"
+date: "2023-07-19"
+output:
+  html_document:
+    df_print: paged
+subtitle: "</br>  </br> Embryonic Pseudotime - CGE & POA </br>  </br>"
+---
+
+ </br>
+**Information for replication:**  </br>
+This code was executed using Seurat version 3 and R version 3.6.1. 
+
+```{=html}
+<style>
+p {
+    font-size: 15px;
+    line-height: 20px;
+    margin: 0px 0px 12px 0px;
+}
+h1, h2, h3, h4, h5, h6, legend {
+    font-family: Montserrat, sans-serif;
+    font-weight: 700;
+    font-size: 20px;
+    color:#56088a;
+}
+body {
+  font-family: "Montserrat", serif, "Open Sans", sans-serif;
+  max-width:5000px !important;
+}
+
+
+#sidebar .date {
+  color: white;
+  font-size:70%;
+}
+#sidebar h2 {
+    z-index: 200;
+    background-color: #56088a;
+    text-align: center;
+    padding: 0.7em;
+    display: block;
+    color: #fcfcfc;
+    font-size: 100%;
+    margin-top: 0px;
+    margin-bottom: 0.809em;
+}
+#sidebar h2 a {
+  font-family:"Montserrat", serif, "Open Sans", sans-serif;
+  color: white;
+  font-weight:700;
+  font-size:120%;
+  padding: 0.1em;
+  line-height: 25px;
+  margin-top: 20px;
+  margin-bottom: 20px;
+  margin-left:5px;
+  margin-left:5px;
+}
+#nav-top span.glyphicon {
+    color: #56088a;
+    font-size: 28px;
+}
+#content a{
+  color:white;
+  font-size:110%;
+  font-weight:700;
+  margin-top: 30px;
+}
+#postamble {
+  background:#56088a;
+  border-top:solid 3px #56088a;
+  width:100%;
+}
+</style>
+```
+```{css, echo=FALSE}
+.title {
+  text-align: center;
+}
+.subtitle {
+  text-align: center;
+}
+@media screen and (max-width: 5000px){
+#content{
+    max-width:5000px;
+    margin-left: 300;
+    margin-right:0;
+    padding: 1em;
+    padding-top: 1em;
+    padding-right: 8em;
+    padding-bottom: 1em;
+    padding-left: 25em;
+    background:white;
+}}
+#sidebar{ 
+  background: black;
+  width:32%;
+}
+
+```
+
+
+```{r setup, include=TRUE, eval=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# Load required packages
+library(rmdformats) ; library(Biobase);library(Seurat); library(SummarizedExperiment)
+library(princurve) ; library(scater) ; library(ggplot2) ; library(reshape2) ; library(Biobase)
+```
+
+
+## Load data 
+
+
+```{r load, include=TRUE, eval=FALSE}
+
+# load embryonic datasets after QC 
+
+POA_DP_E14 <- readRDS("~/Desktop/PHD/OSF/data/POA_DP_E14.rds")
+POA_FT_E14 <- readRDS("~/Desktop/PHD/OSF/data/POA_FT_E14.rds")
+POACGE_10X_E14 <- readRDS("~/Desktop/PHD/OSF/data/POACGE_10X_E14.rds")
+
+```
+
+
+## Find Variable Genes across all E14 datasets excluding variability derived from eminence, aiming at maturation genes 
+
+
+```{r vargenes, include=TRUE, eval=FALSE}
+
+# calculate vargenes in CGE10X and POA10X separatedly and intersect the lists
+    # this will remove genes that are specific for POA or CGE (since we only want genes that explain a common maturation trajectory)
+# calculate variable genes in CCHT9 and CCHT10 separatedly and paste the vectors - since CCHT9 is prog and CCHT10 is prec
+    # keep only the genes that are intersection between 10x intersected and the union of the chips
+features <- local({
+  vargenes <- function(object){
+    object <- NormalizeData(object)
+    features <- FindVariableFeatures(object,selection.method="mvp")
+    features <- features@assays$RNA@var.features
+  }
+  vargenesCGE10X <- vargenes(subset(POACGE_10X_E14,experiment=="CGE"))
+  vargenesPOA10X <- vargenes(subset(POACGE_10X_E14,experiment=="POA"))
+  vargenes10X <- intersect(vargenesCGE10X,vargenesPOA10X)
+  vargenesCCHT9 <- vargenes(POA_DP_E14)
+  vargenesCCHT10 <- vargenes(POA_FT_E14)
+  vargenesCHIPS <- c(vargenesCCHT9,vargenesCCHT10)
+  features <- intersect(vargenes10X,vargenesCHIPS)
+})
+# saveRDS(features,"out/E14_features_pseudotime.rds")
+features <- readRDS("out/E14_features_pseudotime.rds")
+
+```
+
+
+## Merge all E14 data and calculate cell cycle score for each cell
+
+
+```{r cellcycle, include=TRUE, eval=FALSE}
+
+E14_seurat <- merge(POACGE_10X_E14,list(POA_DP_E14,POA_FT_E14))
+cellcycle <- function(data){
+  cell_cycle_genes_s <- readRDS("data/cell_cycle_genes_s.rds")
+  cell_cycle_genes_g2m <- readRDS("data/cell_cycle_genes_g2m.rds")
+  data <- NormalizeData(data)
+  data <- CellCycleScoring(data,s.features = cell_cycle_genes_s, g2m.features = cell_cycle_genes_g2m)
+}
+E14_seurat <- cellcycle(E14_seurat)
+
+```
+
+
+## Calculate Pseudotime Score for each cell (position in pca trajectory defined by maturation genes)
+
+
+```{r pseudotime, include=TRUE, eval=FALSE}
+
+# assemble data into expression set object
+make.eset <- function() {
+  data <- E14_seurat
+  sce <- ExpressionSet(as.matrix(data@assays$RNA@data),phenoData = AnnotatedDataFrame(data@meta.data))
+  assayDataElement(sce,"scale")<-as.matrix(data@assays$RNA@data)
+  sce
+}
+sce <- make.eset()
+
+# Define function for calculate pca projection on maturation genes and retrieve components explaining at least 3% of the variance of maturation
+pca_map <- function(m,features) {
+  pca <- prcomp(m[,features])
+  eigen <- pca$sdev^2
+  pca$x <- pca$x[,which(eigen[1:50]/sum(eigen[1:50])>0.03)]
+  pca$x
+}
+
+# define function for calculating pseudotime - pca, principal curve fitting, mobile mean and progenitor - postmitotic boundary
+my_processing_pseudotime <- function(sce,features=features,genes_begin="Nes") {
+  data <- t(assayDataElement(sce,"scale"))
+  sce$pca <- pca_map(data,features)
+  ### fit a principal curve on significant PC components
+  fit1 <- principal_curve(as.matrix(sce$pca),smoother="lowess")
+  sce$fit1.s <- fit1$s
+  sce$pseudotime <- as.numeric(fit1$lambda)
+  sce$pseudotime <- (sce$pseudotime-min(sce$pseudotime))/max(sce$pseudotime-min(sce$pseudotime))
+  begin <- exprs(sce[,order(sce$pseudotime)])[genes_begin,]
+  sce$pseudotime <- ifelse(rep(which(c(mean(begin[1:5]),mean(begin[length(begin)-5:length(begin)]))==pmax(mean(begin[1:5]),mean(begin[length(begin)-5:length(begin)])))==1,length(sce$pseudotime)),sce$pseudotime,abs(sce$pseudotime-1))
+  
+  # mobile mean
+  sce_order <- sce[,order(sce$pseudotime)]
+  sce_order$mm <- caTools::runmean(sce_order$Phase%in%c("S","G2M"),1000)
+  
+  # determine progenitor / post-mitotic boundary in pseudotime
+  i <- which(sce_order$mm < mean(sce_order$mm)/2)[1]
+  sce_order$mitotic <- ifelse(sce_order$pseudotime<sce_order$pseudotime[i],"Prog","Post")
+  sce_order
+}
+
+sce <- my_processing_pseudotime(sce,features=features,genes_begin="Nes")
+
+```
+
+
+
+
+
+```{r save, include=TRUE, eval=FALSE}
+
+# Add pseudotime calculations to seurat object and SAVE
+local({
+  sce <- sce
+  data <- E14_seurat
+  data@meta.data$mitotic <- data@meta.data$mm <- data@meta.data$pseudotime <- NA
+  i <- match(colnames(sce),rownames(data@meta.data))
+  data@meta.data$pseudotime[i] <- sce$pseudotime
+  data@meta.data$mm[i] <- sce$mm
+  data@meta.data$mitotic[i] <- sce$mitotic
+  #saveRDS(data,"out/E14_pseudotime.rds")
+})
+
+
+```
+
+
+
+
