@@ -16,15 +16,14 @@ Raw data for this project is available in NCBI Gene Expression Omnibus under acc
 
 Contents here provided are also available at Open Science Framework https://osf.io/se7gu 
 
-# Guidelines for replication
-
-1 - Download all contents preferably from OSF repository, here only files under 25MB (https://osf.io/se7gu )
-2 - Use R to execute .Rmd or .R files (scripts):
-    Order of scripts:
-      CCA_KNN_SVM_T18_P15.Rmd
-      CCA_KNN_SVM_T18_P30.Rmd
-      Postnatal_Type_Architecture.Rmd
-      Postnatal_Subtype_Architecture.Rmd
-      lib/go_hgnc.R
-      Embryonic_pseudotime.Rmd
+## Guidelines for replication
+1. Download all contents preferably from OSF repository, here only files under 25MB (https://osf.io/se7gu) </br>
+2. Use R to execute .Rmd or .R files (scripts): </br>
+    * Order of scripts: </br>
+          * CCA_KNN_SVM_T18_P15.Rmd </br>
+          * CCA_KNN_SVM_T18_P30.Rmd </br>
+          * Postnatal_Type_Architecture.Rmd </br>
+          * Postnatal_Subtype_Architecture.Rmd </br>
+          * lib/go_hgnc.R </br>
+          * Embryonic_pseudotime.Rmd </br>
       
