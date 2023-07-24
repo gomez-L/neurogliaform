@@ -1,0 +1,192 @@
+---
+title: 'Code Notebook for : </br>  </br> Developmental Emergence of Neurogliaform
+  Cell Diversity'
+author: "Lucia Gomez Teijeiro"
+date: "2023-07-19"
+output:
+  html_document:
+    df_print: paged
+subtitle: "</br>  </br> Embryonic NGC identification (time-conserved) and NGC conserved genes </br>  </br>"
+---
+
+ </br>
+**Information for replication:**  </br>
+This code was executed using Seurat version 3 and R version 3.6.1. 
+
+```{=html}
+<style>
+p {
+    font-size: 15px;
+    line-height: 20px;
+    margin: 0px 0px 12px 0px;
+}
+h1, h2, h3, h4, h5, h6, legend {
+    font-family: Montserrat, sans-serif;
+    font-weight: 700;
+    font-size: 20px;
+    color:#56088a;
+}
+body {
+  font-family: "Montserrat", serif, "Open Sans", sans-serif;
+  max-width:5000px !important;
+}
+
+
+#sidebar .date {
+  color: white;
+  font-size:70%;
+}
+#sidebar h2 {
+    z-index: 200;
+    background-color: #56088a;
+    text-align: center;
+    padding: 0.7em;
+    display: block;
+    color: #fcfcfc;
+    font-size: 100%;
+    margin-top: 0px;
+    margin-bottom: 0.809em;
+}
+#sidebar h2 a {
+  font-family:"Montserrat", serif, "Open Sans", sans-serif;
+  color: white;
+  font-weight:700;
+  font-size:120%;
+  padding: 0.1em;
+  line-height: 25px;
+  margin-top: 20px;
+  margin-bottom: 20px;
+  margin-left:5px;
+  margin-left:5px;
+}
+#nav-top span.glyphicon {
+    color: #56088a;
+    font-size: 28px;
+}
+#content a{
+  color:white;
+  font-size:110%;
+  font-weight:700;
+  margin-top: 30px;
+}
+#postamble {
+  background:#56088a;
+  border-top:solid 3px #56088a;
+  width:100%;
+}
+</style>
+```
+```{css, echo=FALSE}
+.title {
+  text-align: center;
+}
+.subtitle {
+  text-align: center;
+}
+@media screen and (max-width: 5000px){
+#content{
+    max-width:5000px;
+    margin-left: 300;
+    margin-right:0;
+    padding: 1em;
+    padding-top: 1em;
+    padding-right: 8em;
+    padding-bottom: 1em;
+    padding-left: 25em;
+    background:white;
+}}
+#sidebar{ 
+  background: black;
+  width:32%;
+}
+
+```
+
+
+```{r setup, include=TRUE, eval=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+# Load required packages
+library(Seurat) ; library(URD) ; library(readr) ; library(venn) ; library(ggplot2) ; library(readr) ; library(bmrm)
+
+```
+
+
+## Load POA integration data, postnatal type architecture genes (NGC vs nonNGC) and postnatal merged data
+
+
+```{r load, include=TRUE, eval=FALSE}
+
+E14_POA_integration <- readRDS("out/E14_POA_integration.rds")
+NGCvsnonNGC <- read.csv("out/NGCvsnonNGC_acrossdev_fullrank.csv")
+P15P30P56_f <- readRDS("out/P15P30P56_f.rds") ; P15P30P56_f <- UpdateSeuratObject(P15P30P56_f) # Update object to v3
+
+```
+
+
+
+## Calculate NGC pseudogene - mean expression for all genes conserved between postnatal NGCs and embryonic POA cells
+
+
+```{r pseudogene, include=TRUE, eval=FALSE}
+
+# calculate mean expression for each gene expressed in POA data (E14)
+POAgenemeans <- rowMeans(as.matrix(E14_POA_integration@assays$RNA@data)) 
+POAgenemeans <- POAgenemeans[POAgenemeans>0.05]
+
+# find top 150 postnatal NGC genes (SVM weights)
+NGC_svm <- NGCvsnonNGC[NGCvsnonNGC$w>0,]
+NGC_svm <- NGC_svm[order(NGC_svm$w,decreasing=TRUE),]
+NGC_svm <- NGC_svm[c(1:150),]
+
+# find intersection between postnatal and embryonic gene lists - constitutive NGC genes
+setlist <- venn(list(adult=NGC_svm$X,embry=names(POAgenemeans)))
+setlist_int <- attr(setlist,"intersections")
+NGCgenes <-  c(setlist_int$`adult:embry`)
+
+# calculate NGC pseudogene - normalize by total genes expressed per cell
+E14_POA_integration$NGCpseudogene <- (colMeans(as.matrix(E14_POA_integration@assays$RNA@data[NGCgenes,])) / E14_POA_integration$nFeature_RNA ) * 10000
+
+```
+
+
+## Indentify NGC cells in POA data (above 80 percentile in NGC pseudogene and belonging to cluster 2 - Hmx3 expressing or any progenitor cluster)
+
+
+```{r ngcs, include=TRUE, eval=FALSE}
+
+
+# IDENTIFY NGCs 
+# calculate NGC pseudogene factor - bigger than the 80 percentile and in the path leading to blue cluster
+E14_POA_integration$NGCpseudogene_f <- ifelse(E14_POA_integration$NGCpseudogene >= quantile(E14_POA_integration$NGCpseudogene[E14_POA_integration$clusts_ordered %in% c(0,1,2,5)],0.80,na.rm=TRUE) & 
+                                   E14_POA_integration$clusts_ordered %in% c(0,1,2,5),"NGC","other") 
+
+```
+
+
+## Find time-conserved NGC genes (from E14 to P56) - Z-score 
+
+
+```{r mu, include=TRUE, eval=FALSE}
+
+mu <- t(rowmean(t(as.matrix(E14_POA_integration@assays$RNA@data[NGCgenes,])),E14_POA_integration$NGCpseudogene_f))
+E14mu <- mu[,"NGC"] - mu[,"other"] 
+
+mu2 <- t(rowmean(t(as.matrix(P15P30P56_f@assays$RNA@data[NGCgenes,])),P15P30P56_f$NGC))
+PNmu <- mu2[,"NGC"] - mu2[,"nonNGC"] ;
+
+# normalize by sd and assemble in DF
+E14mu <- E14mu/sd(E14mu)
+PNmu <- PNmu/sd(PNmu)
+mudf <- data.frame(E14mu=E14mu,PNmu=PNmu)
+
+# save data with Zscore for NGC genes
+#write.csv(mudf,"out/NGCgenes_zscore_E14P15P30P56.csv")
+
+```
+
+
+
+
+
+
