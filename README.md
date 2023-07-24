@@ -26,4 +26,7 @@ Contents here provided are also available at Open Science Framework https://osf.
           * Postnatal_Subtype_Architecture.Rmd </br>
           * lib/go_hgnc.R </br>
           * Embryonic_pseudotime.Rmd </br>
+          * NGC_timeconserved_genes.Rmd </br>
+
+Contact the main author and developer at: lucy._.y@hotmail.com
       
