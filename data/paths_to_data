@@ -18,4 +18,6 @@ POACGE_10X_E14.rds - https://osf.io/se7gu/files/osfstorage/64be422dbfc49b07b3312
 # postnatal out data (annotated by subtype and after fluorescence QC)
 P15P30P56_f.rds - https://osf.io/se7gu/files/osfstorage/64bd4d68903ac106fddccc61
 
-
+# embryonic out data
+E14_pseudotime.rds - https://osf.io/se7gu/files/osfstorage/64be4946903ac10791dcc4e0
+E14_POA_integration.rds - https://osf.io/se7gu/files/osfstorage/64be5accb49dcb0823736933
